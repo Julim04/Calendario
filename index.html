@@ -81,7 +81,6 @@
   html{ transition: background-color .2s ease; }
   body{ transition: background-color .2s ease, color .2s ease; }
 
-
   *{ box-sizing: border-box; }
   html,body{ margin:0; padding:0; }
   body{
@@ -589,38 +588,61 @@
 <body>
 <div id="app"></div>
 
-<script>
-(function(){
-  "use strict";
+<!-- Firebase SDK Modular Scripts -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+  import { 
+    getFirestore, 
+    collection, 
+    doc, 
+    setDoc, 
+    deleteDoc, 
+    onSnapshot 
+  } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-  var SOURCE_OPTIONS = [
+  const firebaseConfig = {
+    apiKey: "AIzaSyAevFNbvz__jbWQhNKW5dL_CjcMrrOyHLY",
+    authDomain: "calendario-quintas.firebaseapp.com",
+    projectId: "calendario-quintas",
+    storageBucket: "calendario-quintas.firebasestorage.app",
+    messagingSenderId: "142233641235",
+    appId: "1:142233641235:web:f2223832df67fbc1c13ae6",
+    measurementId: "G-CH0JLP119Y"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const bookingsCol = collection(db, "bookings");
+  const settingsDoc = doc(db, "settings", "general");
+
+  const SOURCE_OPTIONS = [
     { value:'whatsapp', label:'WhatsApp' },
     { value:'airbnb', label:'Airbnb' },
     { value:'indicacao', label:'Indicação' },
     { value:'outro', label:'Outro' }
   ];
-  var STATUS_OPTIONS = [
+  const STATUS_OPTIONS = [
     { value:'confirmado', label:'Confirmada' },
     { value:'pendente', label:'Pendente' },
     { value:'cancelado', label:'Cancelada' }
   ];
-  var SOURCE_COLORS = {
+  const SOURCE_COLORS = {
     whatsapp: { bg:'var(--green-soft)', fg:'var(--green)' },
     airbnb: { bg:'var(--brick-soft)', fg:'var(--brick)' },
     indicacao: { bg:'var(--plum-soft)', fg:'var(--plum)' },
     outro: { bg:'var(--gray-src-soft)', fg:'var(--gray-src)' }
   };
-  var STATUS_COLORS = {
+  const STATUS_COLORS = {
     confirmado: { bg:'var(--green-soft)', fg:'var(--green)' },
     pendente: { bg:'var(--gold-soft)', fg:'var(--gold-dark)' },
     cancelado: { bg:'var(--line-soft)', fg:'var(--ink-faint)' }
   };
-  var WEEKDAYS_FULL = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  var WEEKDAYS_SHORT = ['D','S','T','Q','Q','S','S'];
+  const WEEKDAYS_FULL = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const WEEKDAYS_SHORT = ['D','S','T','Q','Q','S','S'];
 
-  var appEl = document.getElementById('app');
+  const appEl = document.getElementById('app');
 
-  var state = {
+  let state = {
     bookings: [],
     loaded: false,
     theme: 'light',
@@ -635,23 +657,23 @@
   function pad(n){ return String(n).padStart(2,'0'); }
   function toISO(d){ return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()); }
   function fromISO(iso){
-    var parts = iso.split('-').map(Number);
+    const parts = iso.split('-').map(Number);
     return new Date(parts[0], parts[1]-1, parts[2]);
   }
   function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
   function formatBR(iso){
     if(!iso) return '';
-    var p = iso.split('-');
+    const p = iso.split('-');
     return p[2] + '/' + p[1] + '/' + p[0];
   }
   function formatBRshort(iso){
     if(!iso) return '';
-    var p = iso.split('-');
-    var months = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+    const p = iso.split('-');
+    const months = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
     return p[2] + ' ' + months[parseInt(p[1],10)-1];
   }
   function formatMonthLabel(d){
-    var s = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric' }).format(d);
+    const s = new Intl.DateTimeFormat('pt-BR', { month:'long', year:'numeric' }).format(d);
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
   function formatBRL(v){
@@ -667,13 +689,13 @@
       .replace(/"/g,'&quot;')
       .replace(/'/g,'&#39;');
   }
-  function sourceLabel(v){ var o = SOURCE_OPTIONS.find(function(x){return x.value===v;}); return o ? o.label : v; }
-  function statusLabel(v){ var o = STATUS_OPTIONS.find(function(x){return x.value===v;}); return o ? o.label : v; }
+  function sourceLabel(v){ const o = SOURCE_OPTIONS.find(x => x.value===v); return o ? o.label : v; }
+  function statusLabel(v){ const o = STATUS_OPTIONS.find(x => x.value===v); return o ? o.label : v; }
   function uid(){ return 'b_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
 
   function maskPhoneInput(el){
-    var digits = el.value.replace(/\D/g,'').slice(0,11);
-    var formatted = '';
+    let digits = el.value.replace(/\D/g,'').slice(0,11);
+    let formatted = '';
     if(digits.length === 0){ formatted = ''; }
     else if(digits.length <= 2){ formatted = '(' + digits; }
     else if(digits.length <= 6){ formatted = '(' + digits.slice(0,2) + ') ' + digits.slice(2); }
@@ -683,42 +705,42 @@
   }
 
   function maskCurrencyInput(el){
-    var digits = el.value.replace(/\D/g,'').slice(0,10);
+    let digits = el.value.replace(/\D/g,'').slice(0,10);
     if(digits === ''){ el.value = ''; return; }
     digits = digits.replace(/^0+(?=\d)/, '');
     while(digits.length < 3){ digits = '0' + digits; }
-    var cents = digits.slice(-2);
-    var intPart = digits.slice(0, -2).replace(/^0+(?=\d)/, '');
+    const cents = digits.slice(-2);
+    let intPart = digits.slice(0, -2).replace(/^0+(?=\d)/, '');
     intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     el.value = intPart + ',' + cents;
   }
 
   function numberToMaskedString(num){
     if(typeof num !== 'number' || isNaN(num)) return '';
-    var fixed = num.toFixed(2);
-    var parts = fixed.split('.');
-    var intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    const fixed = num.toFixed(2);
+    const parts = fixed.split('.');
+    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     return intPart + ',' + parts[1];
   }
 
   function parseCurrencyMasked(str){
     if(!str) return null;
-    var normalized = str.replace(/\./g,'').replace(',', '.');
-    var val = parseFloat(normalized);
+    const normalized = str.replace(/\./g,'').replace(',', '.');
+    const val = parseFloat(normalized);
     return isNaN(val) ? null : val;
   }
 
   function activeBookings(){
-    return state.bookings.filter(function(b){ return b.status !== 'cancelado'; });
+    return state.bookings.filter(b => b.status !== 'cancelado');
   }
 
   function bookingsForDay(iso){
-    return activeBookings().filter(function(b){ return iso >= b.checkIn && iso <= b.checkOut; });
+    return activeBookings().filter(b => iso >= b.checkIn && iso <= b.checkOut);
   }
 
   function checkOverlap(checkIn, checkOut, excludeId){
     if(!checkIn || !checkOut) return [];
-    return activeBookings().filter(function(b){
+    return activeBookings().filter(b => {
       if(b.id === excludeId) return false;
       return checkIn <= b.checkOut && checkOut >= b.checkIn;
     });
@@ -730,95 +752,114 @@
     document.documentElement.setAttribute('data-theme', theme);
   }
 
-  function toggleTheme(){
-    var next = state.theme === 'dark' ? 'light' : 'dark';
+  async function toggleTheme(){
+    const next = state.theme === 'dark' ? 'light' : 'dark';
     applyTheme(next);
     renderApp();
-    window.storage.set('theme', next, true).catch(function(){});
-  }
-
-  // ---------------- storage ----------------
-  // NOTE: bookings + theme are stored as SHARED data (true), tied to this
-  // artifact/link itself rather than to whichever Claude account opens it.
-  // That's what lets the calendar work the same way with or without login.
-  async function init(){
-    try{
-      var systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      applyTheme(systemPrefersDark ? 'dark' : 'light');
-    }catch(err){}
-
-    try{
-      var themeResult = await window.storage.get('theme', true);
-      if(themeResult && themeResult.value){ applyTheme(themeResult.value); }
-    }catch(err){}
-
-    try{
-      var result = await window.storage.get('bookings', true);
-      state.bookings = (result && result.value) ? JSON.parse(result.value) : [];
-    }catch(err){
-      state.bookings = [];
-    }
-    state.loaded = true;
-    renderApp();
-  }
-
-  async function persist(newBookings){
-    state.bookings = newBookings;
-    renderApp();
-    try{
-      var result = await window.storage.set('bookings', JSON.stringify(newBookings), true);
-      if(!result){ showToast('Não foi possível salvar agora. Tente novamente.'); }
-    }catch(err){
-      showToast('Não foi possível salvar agora. Tente novamente.');
-    }
+    try {
+      await setDoc(settingsDoc, { theme: next }, { merge: true });
+    } catch(e){}
   }
 
   function showToast(msg){
-    var t = document.createElement('div');
+    const t = document.createElement('div');
     t.className = 'toast';
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(function(){ t.remove(); }, 3400);
+    setTimeout(() => { t.remove(); }, 3400);
+  }
+
+  // ---------------- storage via firestore ----------------
+  function init(){
+    const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    applyTheme(systemPrefersDark ? 'dark' : 'light');
+
+    // Sincroniza tema compartilhado
+    onSnapshot(settingsDoc, (docSnap) => {
+      if(docSnap.exists() && docSnap.data().theme){
+        applyTheme(docSnap.data().theme);
+        renderApp();
+      }
+    });
+
+    // Sincroniza reservas em tempo real
+    onSnapshot(bookingsCol, (snapshot) => {
+      const list = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      state.bookings = list;
+      state.loaded = true;
+      renderApp();
+    }, (error) => {
+      console.error(error);
+      state.loaded = true;
+      showToast('Erro ao sincronizar com o banco de dados.');
+      renderApp();
+    });
+  }
+
+  async function saveBookingToDb(booking){
+    try {
+      const docRef = doc(db, "bookings", booking.id);
+      const dataToSave = { ...booking };
+      delete dataToSave.id;
+      await setDoc(docRef, dataToSave);
+      showToast('Reserva salva com sucesso!');
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao salvar no banco. Tente novamente.');
+    }
+  }
+
+  async function deleteBookingFromDb(id){
+    try {
+      await deleteDoc(doc(db, "bookings", id));
+      showToast('Reserva excluída.');
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao excluir reserva. Tente novamente.');
+    }
   }
 
   // ---------------- calendar grid ----------------
   function getGridDates(year, monthIdx){
-    var firstOfMonth = new Date(year, monthIdx, 1);
-    var startWeekday = firstOfMonth.getDay();
-    var gridStart = new Date(year, monthIdx, 1 - startWeekday);
-    var dates = [];
-    for(var i=0;i<42;i++){
+    const firstOfMonth = new Date(year, monthIdx, 1);
+    const startWeekday = firstOfMonth.getDay();
+    const gridStart = new Date(year, monthIdx, 1 - startWeekday);
+    const dates = [];
+    for(let i=0; i<42; i++){
       dates.push(new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate()+i));
     }
     return dates;
   }
 
   function renderCalendar(){
-    var y = state.currentMonth.getFullYear();
-    var m = state.currentMonth.getMonth();
-    var dates = getGridDates(y, m);
-    var todayISO = toISO(new Date());
+    const y = state.currentMonth.getFullYear();
+    const m = state.currentMonth.getMonth();
+    const dates = getGridDates(y, m);
+    const todayISO = toISO(new Date());
 
-    var weekdayHtml = WEEKDAYS_FULL.map(function(full, i){
+    const weekdayHtml = WEEKDAYS_FULL.map((full, i) => {
       return '<div class="weekday-cell"><span class="wd-full">' + full + '</span><span class="wd-short">' + WEEKDAYS_SHORT[i] + '</span></div>';
     }).join('');
 
-    var cellsHtml = dates.map(function(date, idx){
-      var iso = toISO(date);
-      var inMonth = date.getMonth() === m;
-      var weekday = date.getDay();
-      var dayBookings = bookingsForDay(iso);
-      var classes = ['day-cell'];
+    const cellsHtml = dates.map(date => {
+      const iso = toISO(date);
+      const inMonth = date.getMonth() === m;
+      const weekday = date.getDay();
+      const dayBookings = bookingsForDay(iso);
+      const classes = ['day-cell'];
       if(!inMonth) classes.push('other-month');
       if(iso === todayISO) classes.push('today');
 
-      var style = '';
-      var innerExtra = '';
+      let style = '';
+      let innerExtra = '';
       if(dayBookings.length > 0){
-        var b = dayBookings[0];
-        var colors = SOURCE_COLORS[b.source] || SOURCE_COLORS.outro;
-        var isStart = (iso === b.checkIn) || weekday === 0;
-        var isEnd = (iso === b.checkOut) || weekday === 6;
+        const b = dayBookings[0];
+        const colors = SOURCE_COLORS[b.source] || SOURCE_COLORS.outro;
+        const isStart = (iso === b.checkIn) || weekday === 0;
+        const isEnd = (iso === b.checkOut) || weekday === 6;
         if(isStart) classes.push('seg-start');
         if(isEnd) classes.push('seg-end');
         if(!isStart && !isEnd) classes.push('seg-mid');
@@ -848,8 +889,8 @@
         '<div class="weekday-row">' + weekdayHtml + '</div>' +
         '<div class="calendar-grid">' + cellsHtml + '</div>' +
         '<div class="legend">' +
-          SOURCE_OPTIONS.map(function(o){
-            var c = SOURCE_COLORS[o.value];
+          SOURCE_OPTIONS.map(o => {
+            const c = SOURCE_COLORS[o.value];
             return '<div class="legend-item"><span class="legend-dot" style="background:' + c.fg + '"></span>' + o.label + '</div>';
           }).join('') +
         '</div>' +
@@ -858,61 +899,58 @@
 
   // ---------------- stats ----------------
   function renderStats(){
-    var y = state.currentMonth.getFullYear();
-    var m = state.currentMonth.getMonth();
-    var monthStart = toISO(new Date(y, m, 1));
-    var monthEnd = toISO(new Date(y, m+1, 0));
+    const y = state.currentMonth.getFullYear();
+    const m = state.currentMonth.getMonth();
+    const monthStart = toISO(new Date(y, m, 1));
+    const monthEnd = toISO(new Date(y, m+1, 0));
 
-    var overlapping = activeBookings().filter(function(b){
-      return b.checkIn <= monthEnd && b.checkOut >= monthStart;
-    });
+    const overlapping = activeBookings().filter(b => b.checkIn <= monthEnd && b.checkOut >= monthStart);
+    const pessoas = overlapping.reduce((sum,b) => sum + (parseInt(b.guests,10) || 0), 0);
 
-    var pessoas = overlapping.reduce(function(sum,b){ return sum + (parseInt(b.guests,10) || 0); }, 0);
-
-    var occupiedDays = {};
-    overlapping.forEach(function(b){
-      var d = fromISO(b.checkIn > monthStart ? b.checkIn : monthStart);
-      var end = fromISO(b.checkOut < monthEnd ? b.checkOut : monthEnd);
+    const occupiedDays = {};
+    overlapping.forEach(b => {
+      let d = fromISO(b.checkIn > monthStart ? b.checkIn : monthStart);
+      const end = fromISO(b.checkOut < monthEnd ? b.checkOut : monthEnd);
       while(d <= end){
         occupiedDays[toISO(d)] = true;
         d.setDate(d.getDate()+1);
       }
     });
 
-    var receita = overlapping.reduce(function(sum,b){ return sum + (typeof b.price === 'number' ? b.price : 0); }, 0);
+    const receita = overlapping.reduce((sum,b) => sum + (typeof b.price === 'number' ? b.price : 0), 0);
 
-    var stats = [
+    const stats = [
       { value: overlapping.length, label: 'Reservas no mês' },
       { value: pessoas, label: 'Pessoas no mês' },
       { value: Object.keys(occupiedDays).length, label: 'Dias ocupados' },
       { value: receita > 0 ? formatBRL(receita) : '—', label: 'Receita do mês' }
     ];
 
-    return '<div class="stats-row">' + stats.map(function(s){
+    return '<div class="stats-row">' + stats.map(s => {
       return '<div class="stat-card"><div class="stat-value">' + s.value + '</div><div class="stat-label">' + s.label + '</div></div>';
     }).join('') + '</div>';
   }
 
   // ---------------- bookings list ----------------
   function getFilteredSortedBookings(){
-    var q = state.search.trim().toLowerCase();
-    var list = state.bookings.slice();
+    const q = state.search.trim().toLowerCase();
+    let list = state.bookings.slice();
     if(q){
-      list = list.filter(function(b){
+      list = list.filter(b => {
         return (b.guestName||'').toLowerCase().indexOf(q) >= 0 ||
                (b.eventDescription||'').toLowerCase().indexOf(q) >= 0 ||
                (b.notes||'').toLowerCase().indexOf(q) >= 0;
       });
     }
-    list.sort(function(a,b){ return a.checkIn < b.checkIn ? -1 : (a.checkIn > b.checkIn ? 1 : 0); });
+    list.sort((a,b) => (a.checkIn < b.checkIn ? -1 : (a.checkIn > b.checkIn ? 1 : 0)));
     return list;
   }
 
   function renderBookingItem(b){
-    var srcColors = SOURCE_COLORS[b.source] || SOURCE_COLORS.outro;
-    var statColors = STATUS_COLORS[b.status] || STATUS_COLORS.pendente;
-    var priceHtml = (typeof b.price === 'number') ? '<span class="badge-extra">' + formatBRL(b.price) + '</span>' : '';
-    var descHtml = b.eventDescription ? '<div class="booking-desc">' + escapeHTML(b.eventDescription) + '</div>' : '';
+    const srcColors = SOURCE_COLORS[b.source] || SOURCE_COLORS.outro;
+    const statColors = STATUS_COLORS[b.status] || STATUS_COLORS.pendente;
+    const priceHtml = (typeof b.price === 'number') ? '<span class="badge-extra">' + formatBRL(b.price) + '</span>' : '';
+    const descHtml = b.eventDescription ? '<div class="booking-desc">' + escapeHTML(b.eventDescription) + '</div>' : '';
 
     return '' +
       '<div class="booking-item">' +
@@ -935,7 +973,7 @@
   }
 
   function bookingsListInnerHTML(){
-    var list = getFilteredSortedBookings();
+    const list = getFilteredSortedBookings();
     if(list.length === 0){
       if(state.bookings.length === 0){
         return '<div class="empty-state">' + iconHouseSmall() +
@@ -949,7 +987,7 @@
   }
 
   function updateBookingsList(){
-    var el = document.getElementById('bookingsListEl');
+    const el = document.getElementById('bookingsListEl');
     if(el) el.innerHTML = bookingsListInnerHTML();
   }
 
@@ -967,17 +1005,17 @@
   // ---------------- modal ----------------
   function renderModal(){
     if(!state.modalOpen) return '';
-    var b = state.editingBooking;
-    var isEdit = !!b;
-    var checkIn = b ? b.checkIn : (state.prefillDate || '');
-    var checkOut = b ? b.checkOut : '';
+    const b = state.editingBooking;
+    const isEdit = !!b;
+    const checkIn = b ? b.checkIn : (state.prefillDate || '');
+    const checkOut = b ? b.checkOut : '';
 
-    var sourceOptionsHtml = SOURCE_OPTIONS.map(function(o){
-      var sel = b && b.source === o.value ? ' selected' : '';
+    const sourceOptionsHtml = SOURCE_OPTIONS.map(o => {
+      const sel = b && b.source === o.value ? ' selected' : '';
       return '<option value="' + o.value + '"' + sel + '>' + o.label + '</option>';
     }).join('');
-    var statusOptionsHtml = STATUS_OPTIONS.map(function(o){
-      var sel = (b ? b.status === o.value : o.value === 'confirmado') ? ' selected' : '';
+    const statusOptionsHtml = STATUS_OPTIONS.map(o => {
+      const sel = (b ? b.status === o.value : o.value === 'confirmado') ? ' selected' : '';
       return '<option value="' + o.value + '"' + sel + '>' + o.label + '</option>';
     }).join('');
 
@@ -1058,17 +1096,17 @@
   }
 
   function updateOverlapWarning(){
-    var elCheckin = document.getElementById('f-checkin');
-    var elCheckout = document.getElementById('f-checkout');
-    var warnEl = document.getElementById('overlapWarning');
+    const elCheckin = document.getElementById('f-checkin');
+    const elCheckout = document.getElementById('f-checkout');
+    const warnEl = document.getElementById('overlapWarning');
     if(!elCheckin || !elCheckout || !warnEl) return;
-    var checkIn = elCheckin.value;
-    var checkOut = elCheckout.value;
-    var excludeId = state.editingBooking ? state.editingBooking.id : null;
+    const checkIn = elCheckin.value;
+    const checkOut = elCheckout.value;
+    const excludeId = state.editingBooking ? state.editingBooking.id : null;
     if(!checkIn || !checkOut || checkOut < checkIn){ warnEl.style.display='none'; return; }
-    var overlaps = checkOverlap(checkIn, checkOut, excludeId);
+    const overlaps = checkOverlap(checkIn, checkOut, excludeId);
     if(overlaps.length > 0){
-      var names = overlaps.map(function(o){ return o.guestName; }).join(', ');
+      const names = overlaps.map(o => o.guestName).join(', ');
       warnEl.textContent = 'Atenção: já existe reserva nesse período (' + names + ').';
       warnEl.style.display = 'block';
     } else {
@@ -1084,7 +1122,7 @@
   function iconClose(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>'; }
   function iconHouseSmall(){ return '<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"></path><path d="M5 10v10h14V10"></path></svg>'; }
   function iconMoon(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>'; }
-  function iconSun(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>'; }
+  function iconSun(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="12" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>'; }
   function headerIcon(){
     return '<svg width="40" height="40" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
       '<path d="M6 24 20 12l14 12"></path>' +
@@ -1120,12 +1158,12 @@
         renderStats() +
         renderCalendar() +
         renderBookingsCard() +
-        '<p class="storage-note">As reservas ficam salvas neste link e continuam aqui na próxima vez que ele for aberto, mesmo sem login. Quem tiver o link vê e edita o mesmo calendário — não compartilhe fora do necessário.</p>' +
+        '<p class="storage-note">As reservas ficam sincronizadas automaticamente e continuam aqui em qualquer dispositivo sem necessidade de login.</p>' +
       '</div>' +
       renderModal();
 
     if(state.modalOpen){
-      var nameField = document.getElementById('f-name');
+      const nameField = document.getElementById('f-name');
       if(nameField) nameField.focus();
       updateOverlapWarning();
     }
@@ -1151,7 +1189,7 @@
     renderApp();
   }
   function openEditModal(id){
-    var b = state.bookings.find(function(x){ return x.id === id; });
+    const b = state.bookings.find(x => x.id === id);
     if(!b) return;
     state.editingBooking = b;
     state.modalOpen = true;
@@ -1164,37 +1202,35 @@
     renderApp();
   }
   function handleDelete(id){
-    var b = state.bookings.find(function(x){ return x.id === id; });
+    const b = state.bookings.find(x => x.id === id);
     if(!b) return;
-    var ok = window.confirm('Excluir a reserva de ' + b.guestName + '?');
+    const ok = window.confirm('Excluir a reserva de ' + b.guestName + '?');
     if(!ok) return;
-    var newBookings = state.bookings.filter(function(x){ return x.id !== id; });
-    state.modalOpen = false;
-    state.editingBooking = null;
-    persist(newBookings);
+    closeModal();
+    deleteBookingFromDb(id);
   }
   function handleFormSubmit(e){
     e.preventDefault();
-    var guestName = document.getElementById('f-name').value.trim();
-    var phone = document.getElementById('f-phone').value.trim();
-    var source = document.getElementById('f-source').value;
-    var checkIn = document.getElementById('f-checkin').value;
-    var checkOut = document.getElementById('f-checkout').value;
-    var guests = parseInt(document.getElementById('f-guests').value, 10);
-    var eventDescription = document.getElementById('f-desc').value.trim();
-    var priceRaw = document.getElementById('f-price').value;
-    var price = parseCurrencyMasked(priceRaw);
-    var status = document.getElementById('f-status').value;
-    var notes = document.getElementById('f-notes').value.trim();
+    const guestName = document.getElementById('f-name').value.trim();
+    const phone = document.getElementById('f-phone').value.trim();
+    const source = document.getElementById('f-source').value;
+    const checkIn = document.getElementById('f-checkin').value;
+    const checkOut = document.getElementById('f-checkout').value;
+    const guests = parseInt(document.getElementById('f-guests').value, 10);
+    const eventDescription = document.getElementById('f-desc').value.trim();
+    const priceRaw = document.getElementById('f-price').value;
+    const price = parseCurrencyMasked(priceRaw);
+    const status = document.getElementById('f-status').value;
+    const notes = document.getElementById('f-notes').value.trim();
 
-    var errors = [];
+    const errors = [];
     if(!guestName) errors.push('Informe o nome do hóspede.');
     if(!checkIn) errors.push('Informe a data de entrada.');
     if(!checkOut) errors.push('Informe a data de saída.');
     if(checkIn && checkOut && checkOut < checkIn) errors.push('A saída deve ser igual ou depois da entrada.');
     if(!guests || guests < 1) errors.push('Informe ao menos 1 pessoa.');
 
-    var errEl = document.getElementById('formError');
+    const errEl = document.getElementById('formError');
     if(errors.length){
       errEl.textContent = errors.join(' ');
       errEl.style.display = 'block';
@@ -1202,7 +1238,7 @@
     }
     errEl.style.display = 'none';
 
-    var booking = {
+    const booking = {
       id: state.editingBooking ? state.editingBooking.id : uid(),
       guestName: guestName,
       phone: phone,
@@ -1217,25 +1253,16 @@
       createdAt: state.editingBooking ? state.editingBooking.createdAt : new Date().toISOString()
     };
 
-    var newBookings;
-    if(state.editingBooking){
-      newBookings = state.bookings.map(function(b){ return b.id === booking.id ? booking : b; });
-    } else {
-      newBookings = state.bookings.concat([booking]);
-    }
-
-    state.modalOpen = false;
-    state.editingBooking = null;
-    state.prefillDate = null;
-    persist(newBookings);
+    closeModal();
+    saveBookingToDb(booking);
   }
 
   // ---------------- event delegation ----------------
-  appEl.addEventListener('click', function(e){
-    var actionEl = e.target.closest('[data-action]');
+  appEl.addEventListener('click', (e) => {
+    const actionEl = e.target.closest('[data-action]');
     if(!actionEl) return;
-    var action = actionEl.dataset.action;
-    var id = actionEl.dataset.id;
+    const action = actionEl.dataset.action;
+    const id = actionEl.dataset.id;
 
     if(action === 'prev-month') return goPrevMonth();
     if(action === 'next-month') return goNextMonth();
@@ -1243,8 +1270,8 @@
     if(action === 'new-booking') return openNewBookingModal();
     if(action === 'toggle-theme') return toggleTheme();
     if(action === 'day-click'){
-      var iso = actionEl.dataset.date;
-      var dayBookings = bookingsForDay(iso);
+      const iso = actionEl.dataset.date;
+      const dayBookings = bookingsForDay(iso);
       return dayBookings.length ? openEditModal(dayBookings[0].id) : openNewBookingModal(iso);
     }
     if(action === 'edit') return openEditModal(id);
@@ -1253,11 +1280,11 @@
     if(action === 'overlay'){ if(e.target === actionEl) closeModal(); return; }
   });
 
-  appEl.addEventListener('submit', function(e){
+  appEl.addEventListener('submit', (e) => {
     if(e.target && e.target.id === 'bookingForm') handleFormSubmit(e);
   });
 
-  appEl.addEventListener('input', function(e){
+  appEl.addEventListener('input', (e) => {
     if(e.target.id === 'searchInput'){
       state.search = e.target.value;
       updateBookingsList();
@@ -1274,7 +1301,6 @@
   });
 
   init();
-})();
 </script>
 </body>
 </html>
