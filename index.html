@@ -185,6 +185,7 @@
     border: 1px solid var(--line-soft);
     border-radius: var(--radius-md);
     padding: 14px 16px;
+    position: relative;
   }
   .stat-value{
     font-family: var(--font-display);
@@ -192,6 +193,9 @@
     font-weight: 600;
     color: var(--ink);
     line-height:1.1;
+    display:flex;
+    align-items:center;
+    gap:8px;
   }
   .stat-label{
     font-size: 11.5px;
@@ -200,6 +204,24 @@
     color: var(--ink-faint);
     margin-top: 4px;
     font-weight: 600;
+  }
+  .stat-hide-btn{
+    background: transparent;
+    border: 1.5px solid var(--line);
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    color: var(--ink-soft);
+    transition: background .12s ease;
+    flex-shrink:0;
+    padding:0;
+  }
+  .stat-hide-btn:hover{
+    background: var(--line-soft);
+    border-color: var(--ink-soft);
   }
 
   /* ---------- Calendar card ---------- */
@@ -378,6 +400,16 @@
     border-radius: var(--radius-md);
     padding: 13px 14px;
     background: var(--surface);
+    cursor:pointer;
+    transition: background .12s ease, border-color .12s ease;
+  }
+  .booking-item:hover{
+    background: var(--bg-card);
+    border-color: var(--line);
+  }
+  .booking-item .booking-actions{
+    cursor:default;
+    flex-shrink:0;
   }
   .booking-dates{
     font-family: var(--font-display);
@@ -548,6 +580,46 @@
   }
   .modal-footer-right{ display:flex; gap:10px; }
 
+  /* ---------- View modal (detalhes) ---------- */
+  .view-field{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    margin-bottom:10px;
+  }
+  .view-field .label{
+    font-size:11px;
+    font-weight:700;
+    color:var(--ink-faint);
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  .view-field .value{
+    font-size:15px;
+    font-weight:500;
+    color:var(--ink);
+    word-break:break-word;
+  }
+  .view-field .value.badge{
+    display:inline-block;
+    font-size:12px;
+    padding:4px 12px;
+    border-radius:999px;
+    font-weight:600;
+  }
+  .view-field .value.price{
+    font-family:var(--font-display);
+    font-size:18px;
+  }
+  .view-footer{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    margin-top:18px;
+    border-top:1px solid var(--line-soft);
+    padding-top:18px;
+  }
+
   /* ---------- Toast ---------- */
   .toast{
     position: fixed;
@@ -650,7 +722,9 @@
     modalOpen: false,
     editingBooking: null,
     prefillDate: null,
-    search: ''
+    search: '',
+    hideRevenue: false,
+    viewBooking: null
   };
 
   // ---------------- helpers ----------------
@@ -774,7 +848,6 @@
     const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     applyTheme(systemPrefersDark ? 'dark' : 'light');
 
-    // Sincroniza tema compartilhado
     onSnapshot(settingsDoc, (docSnap) => {
       if(docSnap.exists() && docSnap.data().theme){
         applyTheme(docSnap.data().theme);
@@ -782,7 +855,6 @@
       }
     });
 
-    // Sincroniza reservas em tempo real
     onSnapshot(bookingsCol, (snapshot) => {
       const list = [];
       snapshot.forEach((doc) => {
@@ -918,16 +990,23 @@
     });
 
     const receita = overlapping.reduce((sum,b) => sum + (typeof b.price === 'number' ? b.price : 0), 0);
+    const receitaDisplay = (receita > 0) ? formatBRL(receita) : '—';
+    const receitaFinal = state.hideRevenue ? '••••' : receitaDisplay;
 
     const stats = [
       { value: overlapping.length, label: 'Reservas no mês' },
       { value: pessoas, label: 'Pessoas no mês' },
       { value: Object.keys(occupiedDays).length, label: 'Dias ocupados' },
-      { value: receita > 0 ? formatBRL(receita) : '—', label: 'Receita do mês' }
+      { value: receitaFinal, label: 'Receita do mês', extra: true }
     ];
 
     return '<div class="stats-row">' + stats.map(s => {
-      return '<div class="stat-card"><div class="stat-value">' + s.value + '</div><div class="stat-label">' + s.label + '</div></div>';
+      let extraHtml = '';
+      if(s.extra){
+        extraHtml = '<button type="button" class="stat-hide-btn" data-action="toggle-revenue" aria-label="Ocultar/mostrar receita">' + 
+                    (state.hideRevenue ? iconEyeClosed() : iconEye()) + '</button>';
+      }
+      return '<div class="stat-card"><div class="stat-value">' + s.value + extraHtml + '</div><div class="stat-label">' + s.label + '</div></div>';
     }).join('') + '</div>';
   }
 
@@ -953,7 +1032,7 @@
     const descHtml = b.eventDescription ? '<div class="booking-desc">' + escapeHTML(b.eventDescription) + '</div>' : '';
 
     return '' +
-      '<div class="booking-item">' +
+      '<div class="booking-item" data-action="view" data-id="' + b.id + '">' +
         '<div class="booking-dates"><small>Entrada / Saída</small>' + formatBRshort(b.checkIn) + ' – ' + formatBRshort(b.checkOut) + '</div>' +
         '<div class="booking-main">' +
           '<div class="booking-name">' + escapeHTML(b.guestName) + '</div>' +
@@ -965,7 +1044,7 @@
             priceHtml +
           '</div>' +
         '</div>' +
-        '<div class="booking-actions">' +
+        '<div class="booking-actions" onclick="event.stopPropagation();">' +
           '<button type="button" class="icon-btn" data-action="edit" data-id="' + b.id + '" aria-label="Editar reserva">' + iconEdit() + '</button>' +
           '<button type="button" class="icon-btn danger" data-action="delete" data-id="' + b.id + '" aria-label="Excluir reserva">' + iconTrash() + '</button>' +
         '</div>' +
@@ -1002,7 +1081,7 @@
       '</div>';
   }
 
-  // ---------------- modal ----------------
+  // ---------------- modal de edição ----------------
   function renderModal(){
     if(!state.modalOpen) return '';
     const b = state.editingBooking;
@@ -1114,6 +1193,55 @@
     }
   }
 
+  // ---------------- modal de visualização ----------------
+  function renderViewModal(){
+    if(!state.viewBooking) return '';
+    const b = state.viewBooking;
+    const srcColors = SOURCE_COLORS[b.source] || SOURCE_COLORS.outro;
+    const statColors = STATUS_COLORS[b.status] || STATUS_COLORS.pendente;
+
+    return '' +
+      '<div class="modal-overlay" data-action="overlay-view">' +
+        '<div class="modal">' +
+          '<div class="modal-header">' +
+            '<div class="modal-title">Detalhes da reserva</div>' +
+            '<button type="button" class="modal-close" data-action="close-view-modal" aria-label="Fechar">' + iconClose() + '</button>' +
+          '</div>' +
+          '<div>' +
+            '<div class="view-field">' +
+              '<span class="label">Hóspede</span>' +
+              '<span class="value">' + escapeHTML(b.guestName) + '</span>' +
+            '</div>' +
+            (b.phone ? '<div class="view-field"><span class="label">Telefone</span><span class="value">' + escapeHTML(b.phone) + '</span></div>' : '') +
+            '<div class="view-field">' +
+              '<span class="label">Origem</span>' +
+              '<span class="value badge" style="background:' + srcColors.bg + ';color:' + srcColors.fg + '">' + sourceLabel(b.source) + '</span>' +
+            '</div>' +
+            '<div class="view-field">' +
+              '<span class="label">Status</span>' +
+              '<span class="value badge" style="background:' + statColors.bg + ';color:' + statColors.fg + '">' + statusLabel(b.status) + '</span>' +
+            '</div>' +
+            '<div class="view-field">' +
+              '<span class="label">Período</span>' +
+              '<span class="value">' + formatBR(b.checkIn) + ' — ' + formatBR(b.checkOut) + '</span>' +
+            '</div>' +
+            '<div class="view-field">' +
+              '<span class="label">Pessoas</span>' +
+              '<span class="value">' + b.guests + '</span>' +
+            '</div>' +
+            (typeof b.price === 'number' ? '<div class="view-field"><span class="label">Valor</span><span class="value price">' + formatBRL(b.price) + '</span></div>' : '') +
+            (b.eventDescription ? '<div class="view-field"><span class="label">Evento</span><span class="value">' + escapeHTML(b.eventDescription) + '</span></div>' : '') +
+            (b.notes ? '<div class="view-field"><span class="label">Observações</span><span class="value" style="white-space:pre-wrap;">' + escapeHTML(b.notes) + '</span></div>' : '') +
+          '</div>' +
+          '<div class="view-footer">' +
+            '<button type="button" class="btn btn-secondary" data-action="close-view-modal">Fechar</button>' +
+            '<button type="button" class="btn btn-primary" data-action="edit-from-view" data-id="' + b.id + '">Editar</button>' +
+            '<button type="button" class="btn-danger-text" data-action="delete-from-view" data-id="' + b.id + '">Excluir</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
   // ---------------- icons ----------------
   function iconChevronLeft(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>'; }
   function iconChevronRight(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>'; }
@@ -1132,6 +1260,8 @@
       '<path d="M37 19v3"></path>' +
       '</svg>';
   }
+  function iconEye(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'; }
+  function iconEyeClosed(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>'; }
 
   // ---------------- main render ----------------
   function renderApp(){
@@ -1160,7 +1290,8 @@
         renderBookingsCard() +
         '<p class="storage-note">As reservas ficam sincronizadas automaticamente e continuam aqui em qualquer dispositivo sem necessidade de login.</p>' +
       '</div>' +
-      renderModal();
+      renderModal() +
+      renderViewModal();
 
     if(state.modalOpen){
       const nameField = document.getElementById('f-name');
@@ -1191,6 +1322,8 @@
   function openEditModal(id){
     const b = state.bookings.find(x => x.id === id);
     if(!b) return;
+    // Fecha o modal de visualização se estiver aberto
+    state.viewBooking = null;
     state.editingBooking = b;
     state.modalOpen = true;
     renderApp();
@@ -1201,12 +1334,23 @@
     state.prefillDate = null;
     renderApp();
   }
+  function openViewModal(id){
+    const b = state.bookings.find(x => x.id === id);
+    if(!b) return;
+    state.viewBooking = b;
+    renderApp();
+  }
+  function closeViewModal(){
+    state.viewBooking = null;
+    renderApp();
+  }
   function handleDelete(id){
     const b = state.bookings.find(x => x.id === id);
     if(!b) return;
     const ok = window.confirm('Excluir a reserva de ' + b.guestName + '?');
     if(!ok) return;
     closeModal();
+    closeViewModal();
     deleteBookingFromDb(id);
   }
   function handleFormSubmit(e){
@@ -1257,6 +1401,11 @@
     saveBookingToDb(booking);
   }
 
+  function toggleHideRevenue(){
+    state.hideRevenue = !state.hideRevenue;
+    renderApp();
+  }
+
   // ---------------- event delegation ----------------
   appEl.addEventListener('click', (e) => {
     const actionEl = e.target.closest('[data-action]');
@@ -1269,15 +1418,32 @@
     if(action === 'today') return goToday();
     if(action === 'new-booking') return openNewBookingModal();
     if(action === 'toggle-theme') return toggleTheme();
+    if(action === 'toggle-revenue') return toggleHideRevenue();
     if(action === 'day-click'){
       const iso = actionEl.dataset.date;
       const dayBookings = bookingsForDay(iso);
-      return dayBookings.length ? openEditModal(dayBookings[0].id) : openNewBookingModal(iso);
+      return dayBookings.length ? openViewModal(dayBookings[0].id) : openNewBookingModal(iso);
     }
+    if(action === 'view') return openViewModal(id);
     if(action === 'edit') return openEditModal(id);
     if(action === 'delete') return handleDelete(id);
+    if(action === 'edit-from-view'){
+      closeViewModal();
+      return openEditModal(id);
+    }
+    if(action === 'delete-from-view') {
+      closeViewModal();
+      return handleDelete(id);
+    }
     if(action === 'close-modal') return closeModal();
-    if(action === 'overlay'){ if(e.target === actionEl) closeModal(); return; }
+    if(action === 'close-view-modal') return closeViewModal();
+    if(action === 'overlay' || action === 'overlay-view'){
+      if(e.target === actionEl) {
+        if(action === 'overlay') closeModal();
+        else closeViewModal();
+      }
+      return;
+    }
   });
 
   appEl.addEventListener('submit', (e) => {
