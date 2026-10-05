@@ -985,7 +985,7 @@
     const auth = getAuth(app);
     const bookingsCol = collection(db, "bookings");
     const availabilityCol = collection(db, "availability");
-    const WHATSAPP_NUMBER = '55XXXXXXXXXXX'; // DDI+DDD+número, só dígitos (o proprietário vai preencher)
+    const WHATSAPP_NUMBER = '5524992920989';
     const settingsDoc = doc(db, "settings", "general");
     let unsubscribeSettings = null;
     let unsubscribeBookings = null;
@@ -1755,7 +1755,7 @@
 
       let interestHtml = '<p>Toque na data de entrada e depois na data de saída.</p>' +
         '<a class="btn btn-primary" target="_blank" rel="noopener" href="' +
-        escapeHTML('https://wa.me/' + 552499292 -0989 + '?text=' + encodeURIComponent('Olá! Tenho interesse em reservar o espaço. Quais datas estão disponíveis?')) +
+        escapeHTML('https://wa.me/' + 5524992920989 + '?text=' + encodeURIComponent('Olá! Tenho interesse em reservar o espaço. Quais datas estão disponíveis?')) +
         '">Tenho interesse: chamar no WhatsApp</a>';
       if (state.selIn && !state.selOut) {
         interestHtml = '<p>Entrada: ' + escapeHTML(formatBR(state.selIn)) + '. Agora escolha a data de saída.</p>';
@@ -1765,7 +1765,7 @@
           interestHtml += '<div class="overlap-warning" style="display:block;">Esse período inclui datas ocupadas. Escolha outras datas.</div>';
         } else {
           interestHtml += '<a class="btn btn-primary" target="_blank" rel="noopener" href="' +
-            escapeHTML('https://wa.me/' + 552499292 -0989 + '?text=' + encodeURIComponent('Olá! Tenho interesse em reservar o espaço de ' + formatBR(state.selIn) + ' a ' + formatBR(state.selOut) + '. Está disponível?')) +
+            escapeHTML('https://wa.me/' + 5524992920989 + '?text=' + encodeURIComponent('Olá! Tenho interesse em reservar o espaço de ' + formatBR(state.selIn) + ' a ' + formatBR(state.selOut) + '. Está disponível?')) +
             '">Tenho interesse: chamar no WhatsApp</a>';
         }
       }
