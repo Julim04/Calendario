@@ -176,7 +176,7 @@
   /* ---------- Stats ---------- */
   .stats-row{
     display:grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 12px;
     margin-bottom: 24px;
   }
@@ -309,6 +309,7 @@
     position: relative;
   }
   .day-cell:hover{ filter: brightness(0.97); }
+  .day-cell.conflict{ border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
   .day-cell.other-month{ opacity: .42; }
   .day-number{
     font-size: 13px;
@@ -638,6 +639,16 @@
     z-index: 200;
   }
 
+  .login{ max-width:380px; margin:60px auto; display:flex; flex-direction:column; gap:14px; }
+  .login h1{ font-family:var(--font-display); font-style:italic; margin:0; }
+  .login p{ margin:0; color:var(--ink-soft); }
+
+  .day-cell.busy{ background: repeating-linear-gradient(45deg, var(--line-soft), var(--line-soft) 6px, transparent 6px, transparent 12px); cursor:not-allowed; }
+  .day-cell.busy .day-guest{ color: var(--ink-faint); }
+  .day-cell.past{ opacity:.35; cursor:not-allowed; }
+  .day-cell.selected{ background: var(--gold-soft); border-color: var(--gold); }
+  .interest-card{ display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
+
   @media (prefers-reduced-motion: reduce){
     *{ transition: none !important; animation: none !important; }
   }
@@ -673,6 +684,7 @@
     deleteDoc, 
     onSnapshot 
   } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAevFNbvz__jbWQhNKW5dL_CjcMrrOyHLY",
@@ -686,8 +698,13 @@
 
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
+  const auth = getAuth(app);
   const bookingsCol = collection(db, "bookings");
+  const availabilityCol = collection(db, "availability");
+  const WHATSAPP_NUMBER = '55XXXXXXXXXXX'; // DDI+DDD+número, só dígitos (o proprietário vai preencher)
   const settingsDoc = doc(db, "settings", "general");
+  let unsubscribeSettings = null;
+  let unsubscribeBookings = null;
 
   const SOURCE_OPTIONS = [
     { value:'whatsapp', label:'WhatsApp' },
@@ -719,6 +736,14 @@
   let state = {
     bookings: [],
     loaded: false,
+    user: null,
+    authChecked: false,
+    loginError: '',
+    publicAvailability: [],
+    availLoaded: false,
+    showLogin: false,
+    selIn: null,
+    selOut: null,
     theme: 'light',
     currentMonth: startOfMonth(new Date()),
     modalOpen: false,
@@ -850,27 +875,56 @@
   function init(){
     const systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     applyTheme(systemPrefersDark ? 'dark' : 'light');
+    renderApp();
 
-    onSnapshot(settingsDoc, (docSnap) => {
-      if(docSnap.exists() && docSnap.data().theme){
-        applyTheme(docSnap.data().theme);
-        renderApp();
-      }
+    onSnapshot(availabilityCol, snap => {
+      state.publicAvailability = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      state.availLoaded = true;
+      renderApp();
+    }, err => {
+      console.error(err);
+      state.availLoaded = true;
+      renderApp();
     });
 
-    onSnapshot(bookingsCol, (snapshot) => {
-      const list = [];
-      snapshot.forEach((doc) => {
-        list.push({ id: doc.id, ...doc.data() });
+    onAuthStateChanged(auth, user => {
+      state.user = user;
+      state.authChecked = true;
+      state.showLogin = false;
+      if(unsubscribeSettings) unsubscribeSettings();
+      if(unsubscribeBookings) unsubscribeBookings();
+      unsubscribeSettings = null;
+      unsubscribeBookings = null;
+      state.bookings = [];
+      state.loaded = false;
+      state.modalOpen = false;
+      state.viewBooking = null;
+      state.editingBooking = null;
+      renderApp();
+
+      if(!user) return;
+
+      unsubscribeSettings = onSnapshot(settingsDoc, (docSnap) => {
+        if(docSnap.exists() && docSnap.data().theme){
+          applyTheme(docSnap.data().theme);
+          renderApp();
+        }
       });
-      state.bookings = list;
-      state.loaded = true;
-      renderApp();
-    }, (error) => {
-      console.error(error);
-      state.loaded = true;
-      showToast('Erro ao sincronizar com o banco de dados.');
-      renderApp();
+
+      unsubscribeBookings = onSnapshot(bookingsCol, (snapshot) => {
+        const list = [];
+        snapshot.forEach((doc) => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        state.bookings = list;
+        state.loaded = true;
+        renderApp();
+      }, (error) => {
+        console.error(error);
+        state.loaded = true;
+        showToast('Erro ao sincronizar com o banco de dados.');
+        renderApp();
+      });
     });
   }
 
@@ -880,6 +934,11 @@
       const dataToSave = { ...booking };
       delete dataToSave.id;
       await setDoc(docRef, dataToSave);
+      if(booking.status !== 'cancelado'){
+        await setDoc(doc(db, 'availability', booking.id), { checkIn: booking.checkIn, checkOut: booking.checkOut, status: booking.status });
+      } else {
+        await deleteDoc(doc(db, 'availability', booking.id));
+      }
       showToast('Reserva salva com sucesso!');
     } catch (err) {
       console.error(err);
@@ -890,10 +949,27 @@
   async function deleteBookingFromDb(id){
     try {
       await deleteDoc(doc(db, "bookings", id));
+      await deleteDoc(doc(db, 'availability', id));
       showToast('Reserva excluída.');
     } catch (err) {
       console.error(err);
       showToast('Erro ao excluir reserva. Tente novamente.');
+    }
+  }
+
+  async function syncAvailability(){
+    try {
+      for(const booking of state.bookings){
+        if(booking.status !== 'cancelado'){
+          await setDoc(doc(db, 'availability', booking.id), { checkIn: booking.checkIn, checkOut: booking.checkOut, status: booking.status });
+        } else {
+          await deleteDoc(doc(db, 'availability', booking.id));
+        }
+      }
+      showToast('Disponibilidade sincronizada.');
+    } catch(error) {
+      console.error(error);
+      showToast('Erro ao sincronizar disponibilidade. Tente novamente.');
     }
   }
 
@@ -927,6 +1003,7 @@
       const classes = ['day-cell'];
       if(!inMonth) classes.push('other-month');
       if(iso === todayISO) classes.push('today');
+      if(dayBookings.length > 1) classes.push('conflict');
 
       let style = '';
       let innerExtra = '';
@@ -968,6 +1045,7 @@
             const c = SOURCE_COLORS[o.value];
             return '<div class="legend-item"><span class="legend-dot" style="background:' + c.fg + '"></span>' + o.label + '</div>';
           }).join('') +
+          '<div class="legend-item"><span class="legend-dot" style="background:var(--danger)"></span>Conflito de datas</div>' +
         '</div>' +
       '</div>';
   }
@@ -992,15 +1070,17 @@
       }
     });
 
-    const receita = overlapping.reduce((sum,b) => sum + (typeof b.price === 'number' ? b.price : 0), 0);
-    const receitaDisplay = (receita > 0) ? formatBRL(receita) : '—';
-    const receitaFinal = state.hideRevenue ? '••••' : receitaDisplay;
+    // Receita conta no mês da ENTRADA (não duplica reservas que cruzam meses)
+    const doMes = activeBookings().filter(b => b.checkIn >= monthStart && b.checkIn <= monthEnd);
+    const somar = st => doMes.filter(b => b.status === st).reduce((s,b) => s + (typeof b.price === 'number' ? b.price : 0), 0);
+    const fmtReceita = v => state.hideRevenue ? '••••' : (v > 0 ? formatBRL(v) : '—');
 
     const stats = [
       { value: overlapping.length, label: 'Reservas no mês' },
       { value: pessoas, label: 'Pessoas no mês' },
       { value: Object.keys(occupiedDays).length, label: 'Dias ocupados' },
-      { value: receitaFinal, label: 'Receita do mês', extra: true }
+      { value: fmtReceita(somar('confirmado')), label: 'Receita confirmada', extra: true },
+      { value: fmtReceita(somar('pendente')), label: 'A confirmar (pendentes)' }
     ];
 
     return '<div class="stats-row">' + stats.map(s => {
@@ -1317,7 +1397,130 @@
   function iconEyeClosed(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>'; }
 
   // ---------------- main render ----------------
+  function renderLogin(){
+    return '<div class="page">' +
+      '<form id="loginForm" class="card login">' +
+        '<h1>Quintas do Ingá</h1>' +
+        '<p>Entre para ver as reservas.</p>' +
+        '<div class="field">' +
+          '<label for="l-email">E-mail</label>' +
+          '<input id="l-email" type="email" autocomplete="username" required>' +
+        '</div>' +
+        '<div class="field">' +
+          '<label for="l-pass">Senha</label>' +
+          '<input id="l-pass" type="password" autocomplete="current-password" required>' +
+        '</div>' +
+        (state.loginError ? '<div class="form-error" style="display:block;">' + escapeHTML(state.loginError) + '</div>' : '') +
+        '<button type="submit" class="btn btn-primary">Entrar</button>' +
+        '<button type="button" class="btn btn-secondary" data-action="hide-login">← Voltar ao calendário</button>' +
+      '</form>' +
+    '</div>';
+  }
+
+  function isBusyPublic(iso){
+    return state.publicAvailability.some(b => iso >= b.checkIn && iso <= b.checkOut);
+  }
+
+  function rangeHasBusy(a, b){
+    let day = fromISO(a);
+    const end = fromISO(b);
+    while(day <= end){
+      if(isBusyPublic(toISO(day))) return true;
+      day.setDate(day.getDate()+1);
+    }
+    return false;
+  }
+
+  function renderPublic(){
+    const y = state.currentMonth.getFullYear();
+    const m = state.currentMonth.getMonth();
+    const dates = getGridDates(y, m);
+    const todayISO = toISO(new Date());
+    const weekdayHtml = WEEKDAYS_FULL.map((full, i) => {
+      return '<div class="weekday-cell"><span class="wd-full">' + full + '</span><span class="wd-short">' + WEEKDAYS_SHORT[i] + '</span></div>';
+    }).join('');
+    let calendarHtml = '<p style="color:var(--ink-soft);padding:30px 0;text-align:center;">Carregando disponibilidade...</p>';
+
+    if(state.availLoaded){
+      const cellsHtml = dates.map(date => {
+        const iso = toISO(date);
+        const classes = ['day-cell'];
+        const isPast = iso < todayISO;
+        const isBusy = isBusyPublic(iso);
+        const isSelected = state.selIn && iso >= state.selIn && iso <= (state.selOut || state.selIn);
+        if(date.getMonth() !== m) classes.push('other-month');
+        if(iso === todayISO) classes.push('today');
+        if(isPast) classes.push('past');
+        if(isBusy) classes.push('busy');
+        if(isSelected) classes.push('selected');
+        const disabled = isPast || isBusy;
+        const actionAttrs = disabled ? '' : ' data-action="pick-day" data-date="' + iso + '"';
+        return '<button type="button" class="' + classes.join(' ') + '"' + (disabled ? ' disabled' : '') + actionAttrs + '>' +
+          '<span class="day-number">' + date.getDate() + '</span>' +
+          (isBusy ? '<div class="day-guest">Ocupado</div>' : '') +
+          '</button>';
+      }).join('');
+      calendarHtml = '<div class="weekday-row">' + weekdayHtml + '</div>' +
+        '<div class="calendar-grid">' + cellsHtml + '</div>' +
+        '<div class="legend">' +
+          '<div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>Disponível</div>' +
+          '<div class="legend-item"><span class="legend-dot" style="background:var(--line-soft)"></span>Ocupado</div>' +
+          '<div class="legend-item"><span class="legend-dot" style="background:var(--gold)"></span>Selecionado</div>' +
+        '</div>';
+    }
+
+    let interestHtml = '<p>Toque na data de entrada e depois na data de saída.</p>' +
+      '<a class="btn btn-primary" target="_blank" rel="noopener" href="' +
+      escapeHTML('https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent('Olá! Tenho interesse em reservar o espaço. Quais datas estão disponíveis?')) +
+      '">Tenho interesse: chamar no WhatsApp</a>';
+    if(state.selIn && !state.selOut){
+      interestHtml = '<p>Entrada: ' + escapeHTML(formatBR(state.selIn)) + '. Agora escolha a data de saída.</p>';
+    } else if(state.selIn && state.selOut){
+      interestHtml = '<p>Período: ' + escapeHTML(formatBR(state.selIn)) + ' a ' + escapeHTML(formatBR(state.selOut)) + '</p>';
+      if(rangeHasBusy(state.selIn, state.selOut)){
+        interestHtml += '<div class="overlap-warning" style="display:block;">Esse período inclui datas ocupadas. Escolha outras datas.</div>';
+      } else {
+        interestHtml += '<a class="btn btn-primary" target="_blank" rel="noopener" href="' +
+          escapeHTML('https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent('Olá! Tenho interesse em reservar o espaço de ' + formatBR(state.selIn) + ' a ' + formatBR(state.selOut) + '. Está disponível?')) +
+          '">Tenho interesse: chamar no WhatsApp</a>';
+      }
+    }
+    if(state.selIn){
+      interestHtml += '<button type="button" class="btn btn-secondary" data-action="clear-selection">Limpar seleção</button>';
+    }
+
+    return '<div class="page">' +
+      '<div class="header">' +
+        '<div class="header-left">' +
+          '<div class="header-icon">' + headerIcon() + '</div>' +
+          '<div class="header-text"><h1>Quintas do Ingá</h1><p>Confira as datas disponíveis</p></div>' +
+        '</div>' +
+        '<div class="header-right"><button type="button" class="btn btn-secondary" data-action="show-login">Área do proprietário</button></div>' +
+      '</div>' +
+      '<div class="card">' +
+        '<div class="calendar-toolbar">' +
+          '<div class="toolbar-nav">' +
+            '<button type="button" class="nav-btn" data-action="prev-month" aria-label="Mês anterior">' + iconChevronLeft() + '</button>' +
+            '<div class="month-label">' + escapeHTML(formatMonthLabel(state.currentMonth)) + '</div>' +
+            '<button type="button" class="nav-btn" data-action="next-month" aria-label="Próximo mês">' + iconChevronRight() + '</button>' +
+          '</div>' +
+          '<button type="button" class="today-btn" data-action="today">Hoje</button>' +
+        '</div>' +
+        calendarHtml +
+      '</div>' +
+      '<div class="card interest-card">' + interestHtml + '</div>' +
+    '</div>';
+  }
+
   function renderApp(){
+    if(!state.authChecked){
+      appEl.innerHTML = '<div class="page"><p style="color:var(--ink-soft);padding:60px 0;text-align:center;">Carregando...</p></div>';
+      return;
+    }
+    if(!state.user){
+      appEl.innerHTML = state.showLogin ? renderLogin() : renderPublic();
+      return;
+    }
     if(!state.loaded){
       appEl.innerHTML = '<div class="page"><p style="color:var(--ink-soft);padding:60px 0;text-align:center;">Carregando reservas...</p></div>';
       return;
@@ -1336,13 +1539,15 @@
           '</div>' +
           '<div class="header-right">' +
             '<button type="button" class="nav-btn" data-action="toggle-theme" aria-label="Alternar modo noturno">' + (state.theme === 'dark' ? iconSun() : iconMoon()) + '</button>' +
+            '<button type="button" class="btn btn-secondary" data-action="logout">Sair</button>' +
             '<button type="button" class="btn btn-primary" data-action="new-booking">+ Nova reserva</button>' +
           '</div>' +
         '</div>' +
         renderStats() +
         renderCalendar() +
         renderBookingsCard() +
-        '<p class="storage-note">As reservas ficam sincronizadas automaticamente e continuam aqui em qualquer dispositivo sem necessidade de login.</p>' +
+        '<p class="storage-note">As reservas ficam sincronizadas automaticamente entre seus dispositivos.</p>' +
+        '<div style="text-align:center;margin-top:12px;"><button type="button" class="btn btn-secondary" style="font-size:12px;padding:7px 14px;" data-action="sync-availability">Sincronizar disponibilidade</button></div>' +
       '</div>';
 
     appEl.innerHTML = pageContent + renderModal() + renderViewModal();
@@ -1466,6 +1671,9 @@
       createdAt: state.editingBooking ? state.editingBooking.createdAt : new Date().toISOString()
     };
 
+    const conf = checkOverlap(checkIn, checkOut, booking.id);
+    if(booking.status !== 'cancelado' && conf.length && !confirm('Já existe reserva nesse período:\n' + conf.map(c => '• ' + c.guestName + ' (' + formatBRshort(c.checkIn) + ' a ' + formatBRshort(c.checkOut) + ')').join('\n') + '\n\nSalvar mesmo assim?')) return;
+
     closeModal();
     saveBookingToDb(booking);
   }
@@ -1487,7 +1695,28 @@
     if(action === 'today') return goToday();
     if(action === 'new-booking') return openNewBookingModal();
     if(action === 'toggle-theme') return toggleTheme();
+    if(action === 'logout') return signOut(auth);
     if(action === 'toggle-revenue') return toggleHideRevenue();
+    if(action === 'sync-availability') return syncAvailability();
+    if(action === 'show-login'){ state.showLogin = true; return renderApp(); }
+    if(action === 'hide-login'){ state.showLogin = false; return renderApp(); }
+    if(action === 'pick-day'){
+      const iso = actionEl.dataset.date;
+      if(!state.selIn || state.selOut){
+        state.selIn = iso;
+        state.selOut = null;
+      } else if(iso < state.selIn){
+        state.selIn = iso;
+      } else {
+        state.selOut = iso;
+      }
+      return renderApp();
+    }
+    if(action === 'clear-selection'){
+      state.selIn = null;
+      state.selOut = null;
+      return renderApp();
+    }
     if(action === 'day-click'){
       const iso = actionEl.dataset.date;
       const dayBookings = bookingsForDay(iso);
@@ -1514,8 +1743,20 @@
     }
   });
 
-  appEl.addEventListener('submit', (e) => {
-    if(e.target && e.target.id === 'bookingForm') handleFormSubmit(e);
+  appEl.addEventListener('submit', async (e) => {
+    if(e.target && e.target.id === 'bookingForm') return handleFormSubmit(e);
+    if(e.target && e.target.id === 'loginForm'){
+      e.preventDefault();
+      state.loginError = '';
+      const email = document.getElementById('l-email').value;
+      const senha = document.getElementById('l-pass').value;
+      try {
+        await signInWithEmailAndPassword(auth, email.trim(), senha);
+      } catch(error) {
+        state.loginError = 'E-mail ou senha incorretos.';
+        renderApp();
+      }
+    }
   });
 
   appEl.addEventListener('input', (e) => {
